@@ -1,15 +1,34 @@
 import os
 import streamlit as st
+import boto3
 from transformers import pipeline
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from dotenv import load_dotenv
 from pathlib import Path
-import boto3
+from langchain.prompts import PromptTemplate
+from langchain.chains import RetrievalQA
 
 # --- Load Components ---
 st.set_page_config(page_title="Ask My Manuals", page_icon="📘")
 
+# Prompt template
+template = """
+You are a helpful assistant answering questions using appliance manuals.
+
+Only use the provided context to answer the question.
+
+If the answer isn't clear or relevant, say "I couldn’t find that in the manual."
+
+Context:
+{context}
+
+Question: {question}
+Answer:
+"""
+QA_PROMPT = PromptTemplate.from_template(template)
+
+# Load AWS credentials
 load_dotenv(dotenv_path=Path("AskMyManualsS3.env"))
 print("AWS Access key : ", os.getenv("AWS_ACCESS_KEY_ID"))
 
@@ -34,7 +53,7 @@ def download_vector_store_from_s3():
 
 @st.cache_resource
 def load_components():
-    # Step 1: Download and load vector store
+    # Load vector store
     vector_store_path = download_vector_store_from_s3()
     vector_store = FAISS.load_local(
         str(vector_store_path),
@@ -43,13 +62,22 @@ def load_components():
     )
     retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 
-    # Step 2: Load flan-t5-base as a local model
+    # Load model
     generator = pipeline("text2text-generation", model="google/flan-t5-base", max_new_tokens=256)
     llm = HuggingFacePipeline(pipeline=generator)
 
-    return retriever, llm
+    # Build RetrievalQA chain with prompt
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        chain_type_kwargs={"prompt": QA_PROMPT}
+    )
 
-retriever, llm = load_components()
+    return qa_chain
+
+# Load chain
+qa_chain = load_components()
 
 # --- Streamlit UI ---
 st.title("📘 Ask My Manuals")
@@ -59,32 +87,13 @@ user_input = st.text_input("Your question:")
 
 if user_input:
     with st.spinner("Thinking..."):
-        # Step 1: Retrieve relevant documents
-        docs = retriever.invoke(user_input)
-
-        # Step 2: Combine content for the prompt
-        context = "\n\n".join([doc.page_content for doc in docs])
-        prompt = f"""Answer the question based on the following context.
-
-Context:
-{context}
-
-Question: {user_input}
-Answer:"""
-
-        # Step 3: Generate answer
-        response = llm.invoke(prompt)
-
-        # Step 4: Show answer and sources
-        st.markdown(f"**🧠 Answer:** {response.strip()}")
+        result = qa_chain.invoke(user_input)
+        st.markdown(f"**🧠 Answer:** {result['result'].strip()}")
 
         st.markdown("### 🔍 Sources used:")
-        for i, doc in enumerate(docs):
+        for doc in result["source_documents"]:
             meta = doc.metadata
             manual = meta.get("product_name", "Unknown")
             model = meta.get("model", "-")
             page = meta.get("page_number", "Unknown")
-
             st.markdown(f"- **{manual}** (model {model}), page {page}")
-#            st.markdown(f"- **{meta.get('product_name', 'Unknown')}**, model {meta.get('model', '-')}, chunk {meta.get('chunk_id', '-')}")
-
