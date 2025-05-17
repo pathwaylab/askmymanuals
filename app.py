@@ -44,7 +44,7 @@ def load_components():
     retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 
     # Step 2: Load flan-t5-base as a local model
-    generator = pipeline("text2text-generation", model="google/flan-t5-small", max_new_tokens=256)
+    generator = pipeline("text2text-generation", model="google/flan-t5-base", max_new_tokens=256)
     llm = HuggingFacePipeline(pipeline=generator)
 
     return retriever, llm
