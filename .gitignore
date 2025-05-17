@@ -1,0 +1,4 @@
+AskMyManualsS3.env
+etl.py
+S3AccessKeys.txt
+upload_vector_store.ps1
