@@ -16,7 +16,7 @@ print("AWS Access key: ", os.getenv("AWS_ACCESS_KEY_ID"))
 def download_vector_store_from_s3():
     bucket = os.getenv("S3_BUCKET_NAME")
     s3_prefix = "vector_store/"
-    local_path = Path("./tmp/vector_store")
+    local_path = Path("/tmp/vector_store")
     local_path.mkdir(parents=True, exist_ok=True)
 
     s3 = boto3.client(
