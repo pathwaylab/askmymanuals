@@ -71,6 +71,7 @@ def load_components():
         llm=llm,
         chain_type="stuff",
         retriever=retriever,
+        return_source_documents=True,
         chain_type_kwargs={"prompt": QA_PROMPT}
     )
 
