@@ -11,7 +11,7 @@ import boto3
 st.set_page_config(page_title="Ask My Manuals", page_icon="📘")
 
 load_dotenv(dotenv_path=Path("AskMyManualsS3.env"))
-print("AWS Access key: ", os.getenv("AWS_ACCESS_KEY_ID"))
+print("AWS Access key : ", os.getenv("AWS_ACCESS_KEY_ID"))
 
 def download_vector_store_from_s3():
     bucket = os.getenv("S3_BUCKET_NAME")
