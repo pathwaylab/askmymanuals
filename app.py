@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
+import difflib
 
 # --- Streamlit config ---
 st.set_page_config(page_title="Ask My Manuals", page_icon="📘")
@@ -59,37 +60,26 @@ def load_components():
         allow_dangerous_deserialization=True
     )
 
-    # Extract searchable metadata
-    search_terms_to_products = {}
-    for doc in vector_store.docstore._dict.values():
-        meta = doc.metadata
-        product_name = meta.get("product_name", "").lower()
-        brand = meta.get("brand", "").lower()
-        model = meta.get("model", "").lower()
+    # Collect unique product names from metadata
+    product_names = list(set([
+        doc.metadata.get("product_name", "")
+        for doc in vector_store.docstore._dict.values()
+        if doc.metadata.get("product_name")
+    ]))
 
-        if product_name:
-            search_terms_to_products[product_name] = product_name
-        if brand:
-            search_terms_to_products[brand] = product_name
-        if model:
-            search_terms_to_products[model] = product_name
-
-    # Load LLM
     generator = pipeline("text2text-generation", model="MBZUAI/LaMini-Flan-T5-783M", max_new_tokens=512)
     llm = HuggingFacePipeline(pipeline=generator)
 
-    return vector_store, llm, search_terms_to_products
+    return vector_store, llm, product_names
 
-# --- Product detection ---
-def detect_product_name_dynamic(user_input: str, search_terms_map: dict) -> str:
+# --- Fuzzy product matching ---
+def detect_product_fuzzy(user_input: str, known_products: list) -> str:
     lowered = user_input.lower()
-    for keyword, product in search_terms_map.items():
-        if keyword in lowered:
-            return product
-    return None
+    matches = difflib.get_close_matches(lowered, known_products, n=1, cutoff=0.6)
+    return matches[0] if matches else None
 
 # --- App logic ---
-vector_store, llm, search_terms_to_products = load_components()
+vector_store, llm, known_products = load_components()
 
 st.title("📘 Ask My Manuals")
 st.write("Ask a question about your appliances and devices.")
@@ -98,7 +88,7 @@ user_input = st.text_input("Your question:")
 
 if user_input:
     with st.spinner("Thinking..."):
-        product = detect_product_name_dynamic(user_input, search_terms_to_products)
+        product = detect_product_fuzzy(user_input, known_products)
 
         if product:
             filtered_retriever = vector_store.as_retriever(
@@ -114,16 +104,6 @@ if user_input:
             return_source_documents=True,
             chain_type_kwargs={"prompt": QA_PROMPT}
         )
-
-        st.write("Detected product:", product)
-
-        # Quick check: how many chunks exist for that product?
-        matches = [
-            doc for doc in vector_store.docstore._dict.values()
-            if product and doc.metadata.get("product_name", "").lower() == product.lower()
-            #if doc.metadata.get("product_name", "").lower() == product.lower()
-        ]
-        st.write(f"Chunks available for '{product}':", len(matches))
 
         result = qa_chain.invoke(user_input)
 
