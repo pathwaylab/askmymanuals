@@ -115,6 +115,15 @@ if user_input:
             chain_type_kwargs={"prompt": QA_PROMPT}
         )
 
+        st.write("Detected product:", product)
+
+        # Quick check: how many chunks exist for that product?
+        matches = [
+            doc for doc in vector_store.docstore._dict.values()
+            if doc.metadata.get("product_name", "").lower() == product.lower()
+        ]
+        st.write(f"Chunks available for '{product}':", len(matches))
+
         result = qa_chain.invoke(user_input)
 
         st.markdown(f"**🧠 Answer:** {result['result'].strip()}")
