@@ -1,8 +1,8 @@
 streamlit
 boto3
 python-dotenv
-transformers
-torch
+transformers>=4.36.2
+torch>=2.1.0
 langchain
 langchain_community
 langchain_huggingface
