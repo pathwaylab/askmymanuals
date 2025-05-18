@@ -9,15 +9,14 @@ from pathlib import Path
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
 
-# --- Load Components ---
+# --- Streamlit config ---
 st.set_page_config(page_title="Ask My Manuals", page_icon="📘")
 
-# Prompt template
+# --- Prompt Template ---
 template = """
 You are a helpful assistant answering questions using appliance manuals.
 
 Only use the provided context to answer the question.
-
 If the answer isn't clear or relevant, say "I couldn’t find that in the manual."
 
 Context:
@@ -28,10 +27,10 @@ Answer:
 """
 QA_PROMPT = PromptTemplate.from_template(template)
 
-# Load AWS credentials
+# --- Load environment variables ---
 load_dotenv(dotenv_path=Path("AskMyManualsS3.env"))
-print("AWS Access key : ", os.getenv("AWS_ACCESS_KEY_ID"))
 
+# --- Download vector store from S3 ---
 def download_vector_store_from_s3():
     bucket = os.getenv("S3_BUCKET_NAME")
     s3_prefix = "vector_store/"
@@ -48,39 +47,50 @@ def download_vector_store_from_s3():
     for file_name in ["index.faiss", "index.pkl"]:
         s3.download_file(bucket, f"{s3_prefix}{file_name}", str(local_path / file_name))
 
-    print("✅ Vector store downloaded from S3.")
     return local_path
 
+# --- Load components ---
 @st.cache_resource
 def load_components():
-    # Load vector store
     vector_store_path = download_vector_store_from_s3()
     vector_store = FAISS.load_local(
         str(vector_store_path),
         embeddings=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2"),
         allow_dangerous_deserialization=True
     )
-    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 
-    # Load model
+    # Extract searchable metadata
+    search_terms_to_products = {}
+    for doc in vector_store.docstore._dict.values():
+        meta = doc.metadata
+        product_name = meta.get("product_name", "").lower()
+        brand = meta.get("brand", "").lower()
+        model = meta.get("model", "").lower()
+
+        if product_name:
+            search_terms_to_products[product_name] = product_name
+        if brand:
+            search_terms_to_products[brand] = product_name
+        if model:
+            search_terms_to_products[model] = product_name
+
+    # Load LLM
     generator = pipeline("text2text-generation", model="google/flan-t5-base", max_new_tokens=256)
     llm = HuggingFacePipeline(pipeline=generator)
 
-    # Build RetrievalQA chain with prompt
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": QA_PROMPT}
-    )
+    return vector_store, llm, search_terms_to_products
 
-    return qa_chain
+# --- Product detection ---
+def detect_product_name_dynamic(user_input: str, search_terms_map: dict) -> str:
+    lowered = user_input.lower()
+    for keyword, product in search_terms_map.items():
+        if keyword in lowered:
+            return product
+    return None
 
-# Load chain
-qa_chain = load_components()
+# --- App logic ---
+vector_store, llm, search_terms_to_products = load_components()
 
-# --- Streamlit UI ---
 st.title("📘 Ask My Manuals")
 st.write("Ask a question about your appliances and devices.")
 
@@ -88,9 +98,26 @@ user_input = st.text_input("Your question:")
 
 if user_input:
     with st.spinner("Thinking..."):
-        result = qa_chain.invoke(user_input)
-        st.markdown(f"**🧠 Answer:** {result['result'].strip()}")
+        product = detect_product_name_dynamic(user_input, search_terms_to_products)
 
+        if product:
+            filtered_retriever = vector_store.as_retriever(
+                search_kwargs={"k": 5, "filter": {"product_name": product}}
+            )
+        else:
+            filtered_retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=filtered_retriever,
+            return_source_documents=True,
+            chain_type_kwargs={"prompt": QA_PROMPT}
+        )
+
+        result = qa_chain.invoke(user_input)
+
+        st.markdown(f"**🧠 Answer:** {result['result'].strip()}")
         st.markdown("### 🔍 Sources used:")
         for doc in result["source_documents"]:
             meta = doc.metadata
