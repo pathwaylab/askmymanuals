@@ -121,6 +121,7 @@ if user_input:
         matches = [
             doc for doc in vector_store.docstore._dict.values()
             if product and doc.metadata.get("product_name", "").lower() == product.lower():
+                print("✅ Found matching product chunk")
             #if doc.metadata.get("product_name", "").lower() == product.lower()
         ]
         st.write(f"Chunks available for '{product}':", len(matches))
