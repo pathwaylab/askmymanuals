@@ -75,7 +75,7 @@ def load_components():
             search_terms_to_products[model] = product_name
 
     # Load LLM
-    generator = pipeline("text2text-generation", model="google/flan-t5-large", max_new_tokens=512)
+    generator = pipeline("text2text-generation", model="google/flan-t5-xl", max_new_tokens=512)
     llm = HuggingFacePipeline(pipeline=generator)
 
     return vector_store, llm, search_terms_to_products
