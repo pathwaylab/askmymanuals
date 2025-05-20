@@ -5,7 +5,7 @@ import difflib
 from pathlib import Path
 from dotenv import load_dotenv
 from transformers import pipeline
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
@@ -35,28 +35,28 @@ QA_PROMPT = PromptTemplate.from_template(template)
 # --- Load environment variables ---
 load_dotenv(dotenv_path=Path("AskMyManualsS3.env"))
 
-# --- Load vector store from Chroma ---
+# --- Load vector store from FAISS ---
 def load_vector_store():
     ask_mode = os.getenv("ASK_MODE", "cloud").lower()
 
     if ask_mode == "local":
-        print("🖥️ Running in LOCAL mode (loading vector store from ../chroma_store)")
-        persist_path = "../chroma_store"
+        print("🖥️ Running in LOCAL mode (loading vector store from ../vector_store)")
+        persist_path = "../vector_store"
     else:
-        print("☁️ Running in CLOUD mode (loading vector store from /tmp/chroma_store)")
-        persist_path = "/tmp/chroma_store"
+        print("☁️ Running in CLOUD mode (loading vector store from /tmp/vector_store)")
+        persist_path = "/tmp/vector_store"
 
     embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    return Chroma(persist_directory=persist_path, embedding_function=embedder)
+    return FAISS.load_local(persist_path, embeddings=embedder, allow_dangerous_deserialization=True)
 
 # --- Load components ---
 def load_components():
     vector_store = load_vector_store()
 
     product_names = list(set([
-        meta.get("product_name", "")
-        for meta in vector_store._collection.get(include=["metadatas"]).get("metadatas", [])
-        if meta.get("product_name")
+        doc.metadata.get("product_name", "")
+        for doc in vector_store.docstore._dict.values()
+        if doc.metadata.get("product_name")
     ]))
 
     generator = pipeline("text2text-generation", model="MBZUAI/LaMini-Flan-T5-783M", max_new_tokens=512)
