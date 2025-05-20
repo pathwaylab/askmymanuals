@@ -8,3 +8,5 @@ langchain_community
 langchain_huggingface
 faiss-cpu
 huggingface_hub[hf_xet]>=0.20.0
+chromadb
+langchain-chroma

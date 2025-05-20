@@ -5,7 +5,7 @@ import difflib
 from pathlib import Path
 from dotenv import load_dotenv
 from transformers import pipeline
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQA
@@ -35,49 +35,28 @@ QA_PROMPT = PromptTemplate.from_template(template)
 # --- Load environment variables ---
 load_dotenv(dotenv_path=Path("AskMyManualsS3.env"))
 
-# --- Download vector store from S3 ---
-def download_vector_store_from_s3():
-    bucket = os.getenv("S3_BUCKET_NAME")
-    s3_prefix = "vector_store/"
-    local_path = Path("/tmp/vector_store")
-    local_path.mkdir(parents=True, exist_ok=True)
-
-    s3 = boto3.client(
-        "s3",
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION")
-    )
-
-    for file_name in ["index.faiss", "index.pkl"]:
-        s3.download_file(bucket, f"{s3_prefix}{file_name}", str(local_path / file_name))
-
-    return local_path
-
-# --- Load components ---
-def load_components():
+# --- Load vector store from Chroma ---
+def load_vector_store():
     ask_mode = os.getenv("ASK_MODE", "cloud").lower()
 
     if ask_mode == "local":
-        vector_store_path = Path("../vector_store")
-        print("🖥️ Running in LOCAL mode (loading vector store from disk)")
+        print("🖥️ Running in LOCAL mode (loading vector store from ../chroma_store)")
+        persist_path = "../chroma_store"
     else:
-        vector_store_path = download_vector_store_from_s3()
-        if STREAMLIT_AVAILABLE:
-            st.info("☁️ Running in CLOUD mode (downloading vector store from S3)")
-        else:
-            print("☁️ Running in CLOUD mode (downloading vector store from S3)")
+        print("☁️ Running in CLOUD mode (loading vector store from /tmp/chroma_store)")
+        persist_path = "/tmp/chroma_store"
 
-    vector_store = FAISS.load_local(
-        str(vector_store_path),
-        embeddings=HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2"),
-        allow_dangerous_deserialization=True
-    )
+    embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    return Chroma(persist_directory=persist_path, embedding_function=embedder)
+
+# --- Load components ---
+def load_components():
+    vector_store = load_vector_store()
 
     product_names = list(set([
-        doc.metadata.get("product_name", "")
-        for doc in vector_store.docstore._dict.values()
-        if doc.metadata.get("product_name")
+        meta.get("product_name", "")
+        for meta in vector_store._collection.get(include=["metadatas"]).get("metadatas", [])
+        if meta.get("product_name")
     ]))
 
     generator = pipeline("text2text-generation", model="MBZUAI/LaMini-Flan-T5-783M", max_new_tokens=512)
@@ -106,9 +85,9 @@ def run_streamlit_ui():
             product = detect_product_fuzzy(user_input, known_products)
 
             if product:
-                retriever = vector_store.as_retriever(search_kwargs={"k": 5, "filter": {"product_name": product}})
+                retriever = vector_store.as_retriever(search_kwargs={"k": 2, "filter": {"product_name": product}})
             else:
-                retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+                retriever = vector_store.as_retriever(search_kwargs={"k": 2})
 
             qa_chain = RetrievalQA.from_chain_type(
                 llm=llm,
@@ -131,7 +110,7 @@ def run_streamlit_ui():
 
 def run_cli_mode():
     vector_store, llm, known_products = load_components()
-    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+    retriever = vector_store.as_retriever(search_kwargs={"k": 2})
 
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
@@ -151,9 +130,9 @@ def run_cli_mode():
 
         product = detect_product_fuzzy(user_input, known_products)
         if product:
-            retriever = vector_store.as_retriever(search_kwargs={"k": 5, "filter": {"product_name": product}})
+            retriever = vector_store.as_retriever(search_kwargs={"k": 2, "filter": {"product_name": product}})
         else:
-            retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+            retriever = vector_store.as_retriever(search_kwargs={"k": 2})
 
         qa_chain.retriever = retriever
         result = qa_chain.invoke(user_input)
