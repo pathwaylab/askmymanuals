@@ -1,4 +1,9 @@
 AskMyManualsS3.env
-etl.py
+dependencies.txt
 upload_vector_store.ps1
 run_local.sh
+scratchpad.py
+audit_chunks_pdfplumber.py
+audit_chunks_unstructured.py
+etl_pdfplumber.py
+etl_unstructured.py

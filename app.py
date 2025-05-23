@@ -1,27 +1,22 @@
 import os
 import sys
-import boto3
-import difflib
+import streamlit as st
 from pathlib import Path
 from dotenv import load_dotenv
 from transformers import pipeline
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
-from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
 
-# Try importing Streamlit only if needed
-try:
-    import streamlit as st
-    STREAMLIT_AVAILABLE = True
-except ImportError:
-    STREAMLIT_AVAILABLE = False
-
-# --- Prompt Template ---
-template = """
+# --- Prompt ---
+QA_PROMPT = PromptTemplate.from_template("""
 You are a helpful assistant answering questions using appliance manuals.
 
 Only use the provided context to answer the question.
+
 If the answer isn't clear or relevant, say "I couldn’t find that in the manual."
 
 Context:
@@ -29,131 +24,117 @@ Context:
 
 Question: {question}
 Answer:
-"""
-QA_PROMPT = PromptTemplate.from_template(template)
+""")
 
-# --- Load environment variables ---
-load_dotenv(dotenv_path=Path("AskMyManualsS3.env"))
+# --- Environment Loading ---
+if os.getenv("ASK_MODE", "streamlit") == "local":
+    dotenv_path = Path("AskMyManualsLocal.env")
+else:
+    dotenv_path = Path("AskMyManualsS3.env")
+load_dotenv(dotenv_path=dotenv_path)
 
-# --- Load vector store from FAISS ---
+# --- Load Vector Store ---
 def load_vector_store():
-    ask_mode = os.getenv("ASK_MODE", "cloud").lower()
-
-    if ask_mode == "local":
+    mode = os.getenv("ASK_MODE", "streamlit")
+    if mode == "local":
         print("🖥️ Running in LOCAL mode (loading vector store from ../vector_store)")
-        persist_path = "../vector_store"
+        persist_path = str(Path(__file__).parent.parent / "vector_store")
     else:
         print("☁️ Running in CLOUD mode (loading vector store from /tmp/vector_store)")
         persist_path = "/tmp/vector_store"
 
     embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    return FAISS.load_local(persist_path, embeddings=embedder, allow_dangerous_deserialization=True)
+    return FAISS.load_local(persist_path, embedder, allow_dangerous_deserialization=True)
 
-# --- Load components ---
+# --- Load Components ---
 def load_components():
     vector_store = load_vector_store()
+    retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 5, "lambda_mult": 0.3})
 
-    product_names = list(set([
-        doc.metadata.get("product_name", "")
-        for doc in vector_store.docstore._dict.values()
-        if doc.metadata.get("product_name")
-    ]))
-
-    generator = pipeline("text2text-generation", model="MBZUAI/LaMini-Flan-T5-783M", max_new_tokens=512)
+    generator = pipeline("text2text-generation", model="MBZUAI/LaMini-Flan-T5-783M", max_new_tokens=256)
     llm = HuggingFacePipeline(pipeline=generator)
 
-    return vector_store, llm, product_names
+    qa_chain = create_stuff_documents_chain(llm=llm, prompt=QA_PROMPT)
 
-# --- Fuzzy product matching ---
-def detect_product_fuzzy(user_input: str, known_products: list) -> str:
-    lowered = user_input.lower()
-    matches = difflib.get_close_matches(lowered, known_products, n=1, cutoff=0.6)
-    return matches[0] if matches else None
+    # Get list of known product names
+    known_products = set()
+    for doc in vector_store.docstore._dict.values():
+        name = doc.metadata.get("product_name", "").lower()
+        if name:
+            known_products.add(name)
 
-# --- App mode selection ---
-def run_streamlit_ui():
+    return vector_store, retriever, qa_chain, llm, known_products
+
+# --- CLI Mode ---
+def run_cli_mode():
+    print("\n📘 Ask My Manuals (Command Line Mode)")
+    print("Type 'exit' to quit.\n")
+
+    vector_store, retriever, qa_chain, llm, known_products = load_components()
+
+    while True:
+        user_input = input("Your question: ").strip()
+        if user_input.lower() in {"exit", "quit"}:
+            break
+
+        enriched_query = user_input.lower()
+        docs = retriever.invoke(enriched_query)
+
+        # 🔍 Product filtering
+        product = next((name for name in known_products if name in enriched_query), None)
+        if product:
+            docs = [doc for doc in docs if doc.metadata.get("product_name", "").lower() == product]
+
+        # 🔧 Truncate and limit docs
+        truncated_docs = [
+            Document(page_content=doc.page_content[:400], metadata=doc.metadata)
+            for doc in docs
+        ][:3]
+
+        result = qa_chain.invoke({"context": truncated_docs, "question": user_input})
+        print("\n🧠 Answer:", result.strip())
+
+        print("\n🔍 Sources used:")
+        for doc in truncated_docs:
+            meta = doc.metadata
+            print(f"- {meta.get('product_name', 'Unknown')} (model {meta.get('model', '-')})")
+            print("  Preview:", doc.page_content[:200].replace("\n", " "), "\n")
+
+# --- Streamlit UI ---
+def run_streamlit_mode():
     st.set_page_config(page_title="Ask My Manuals", page_icon="📘")
-    vector_store, llm, known_products = load_components()
-
     st.title("📘 Ask My Manuals")
     st.write("Ask a question about your appliances and devices.")
 
+    vector_store, retriever, qa_chain, llm, known_products = load_components()
     user_input = st.text_input("Your question:")
 
     if user_input:
         with st.spinner("Thinking..."):
-            product = detect_product_fuzzy(user_input, known_products)
+            enriched_query = user_input.lower()
+            docs = retriever.invoke(enriched_query)
 
+            product = next((name for name in known_products if name in enriched_query), None)
             if product:
-                retriever = vector_store.as_retriever(search_kwargs={"k": 2, "filter": {"product_name": product}})
-            else:
-                retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+                docs = [doc for doc in docs if doc.metadata.get("product_name", "").lower() == product]
 
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="stuff",
-                retriever=retriever,
-                return_source_documents=True,
-                chain_type_kwargs={"prompt": QA_PROMPT}
-            )
+            truncated_docs = [
+                Document(page_content=doc.page_content[:400], metadata=doc.metadata)
+                for doc in docs
+            ][:3]
 
-            result = qa_chain.invoke(user_input)
-            st.markdown(f"**🧠 Answer:** {result['result'].strip()}")
+            result = qa_chain.invoke({"context": truncated_docs, "question": user_input})
+            st.markdown(f"**🧠 Answer:** {result.strip()}")
 
             st.markdown("### 🔍 Sources used:")
-            for doc in result["source_documents"]:
+            for doc in truncated_docs:
                 meta = doc.metadata
-                manual = meta.get("product_name", "Unknown")
-                model = meta.get("model", "-")
-                page = meta.get("page_number", "Unknown")
-                st.markdown(f"- **{manual}** (model {model}), page {page}")
+                st.markdown(f"- **{meta.get('product_name', 'Unknown')}** (model {meta.get('model', '-')})")
+                st.caption(doc.page_content[:200].replace("\n", " "))
 
-def run_cli_mode():
-    vector_store, llm, known_products = load_components()
-    retriever = vector_store.as_retriever(search_kwargs={"k": 2})
-
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": QA_PROMPT}
-    )
-
-    print("\n📘 Ask My Manuals (Command Line Mode)")
-    print("Type 'exit' to quit.\n")
-
-    while True:
-        user_input = input("Your question: ").strip()
-        if user_input.lower() in ["exit", "quit"]:
-            break
-
-        product = detect_product_fuzzy(user_input, known_products)
-        if product:
-            retriever = vector_store.as_retriever(search_kwargs={"k": 2, "filter": {"product_name": product}})
-        else:
-            retriever = vector_store.as_retriever(search_kwargs={"k": 2})
-
-        qa_chain.retriever = retriever
-        result = qa_chain.invoke(user_input)
-
-        print("\n🧠 Answer:", result["result"].strip())
-        print("\n🔍 Sources used:")
-        for doc in result["source_documents"]:
-            meta = doc.metadata
-            manual = meta.get("product_name", "Unknown")
-            model = meta.get("model", "-")
-            page = meta.get("page_number", "Unknown")
-            print(f"- {manual} (model {model}), page {page}")
-        print("\n")
-
-# --- Entry point ---
+# --- Entry Point ---
 if __name__ == "__main__":
-    ask_mode = os.getenv("ASK_MODE", "cloud").lower()
-    if ask_mode == "local":
+    if os.getenv("ASK_MODE", "streamlit") == "local":
         run_cli_mode()
     else:
-        if STREAMLIT_AVAILABLE:
-            run_streamlit_ui()
-        else:
-            print("❌ Streamlit is not available, and ASK_MODE is not set to local.")
+        run_streamlit_mode()
