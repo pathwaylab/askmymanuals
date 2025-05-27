@@ -1,7 +1,6 @@
 streamlit
 boto3
 python-dotenv
-transformers>=4.36.2
 torch>=2.1.0
 langchain
 langchain_community
@@ -10,3 +9,4 @@ faiss-cpu
 huggingface_hub[hf_xet]>=0.20.0
 chromadb
 langchain-chroma
+transformers==4.40.2
