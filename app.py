@@ -1,6 +1,5 @@
 import os
 import sys
-import streamlit as st
 from pathlib import Path
 from dotenv import load_dotenv
 from transformers import pipeline
@@ -44,8 +43,15 @@ def ensure_vector_store_cloud():
         for fname in expected_files:
             key = f"{prefix}/{fname}"
             local_path = os.path.join(persist_path, fname)
-            st.info(f"Downloading {fname} from S3...")
-            s3.download_file(bucket, key, local_path)
+            print(f"Downloading {fname} from S3...")
+            try:
+                s3.download_file(bucket, key, local_path)
+            except Exception as e:
+                print(f"Error downloading {fname}: {e}")
+    # After download, check again
+    for fname in expected_files:
+        if not os.path.exists(os.path.join(persist_path, fname)):
+            raise FileNotFoundError(f"Vector store file missing: {fname}")
 
 # --- Load Vector Store ---
 def load_vector_store():
@@ -105,10 +111,18 @@ def run_cli_mode():
 
 # --- Streamlit UI ---
 def run_streamlit_mode():
+    import streamlit as st
     st.set_page_config(page_title="Ask My Manuals", page_icon="📘")
     st.title("📘 Ask My Manuals")
     st.write("Ask a question about your appliances and devices.")
-    vector_store, retriever, qa_chain, llm, known_products = load_components()
+    try:
+        vector_store, retriever, qa_chain, llm, known_products = load_components()
+    except FileNotFoundError as e:
+        st.error(str(e))
+        st.stop()
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
+        st.stop()
     user_input = st.text_input("Your question:")
     if user_input:
         with st.spinner("Thinking..."):
