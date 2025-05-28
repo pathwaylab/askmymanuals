@@ -1,5 +1,6 @@
 import os
 import sys
+import boto3
 import streamlit as st
 from pathlib import Path
 from dotenv import load_dotenv
