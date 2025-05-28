@@ -38,6 +38,8 @@ def ensure_vector_store_cloud():
         s3 = boto3.client("s3")
         bucket = os.getenv("VECTOR_STORE_BUCKET")
         prefix = os.getenv("VECTOR_STORE_PREFIX", "vector_store")
+        print(f"VECTOR_STORE_BUCKET: {bucket}")
+        print(f"VECTOR_STORE_PREFIX: {prefix}")
         if not os.path.exists(persist_path):
             os.makedirs(persist_path)
         for fname in expected_files:
