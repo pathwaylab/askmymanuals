@@ -42,8 +42,8 @@ def ensure_vector_store_cloud():
         #print(f"VECTOR_STORE_BUCKET: {bucket}")
         #print(f"VECTOR_STORE_PREFIX: {prefix}")
 
-        st.write(f"VECTOR_STORE_BUCKET: {bucket}")
-        st.write(f"VECTOR_STORE_PREFIX: {prefix}")
+        #st.write(f"VECTOR_STORE_BUCKET: {bucket}")
+        #st.write(f"VECTOR_STORE_PREFIX: {prefix}")
 
         if not os.path.exists(persist_path):
             os.makedirs(persist_path)
@@ -51,8 +51,10 @@ def ensure_vector_store_cloud():
             key = f"{prefix}/{fname}"
             local_path = os.path.join(persist_path, fname)
             print(f"Downloading {fname} from S3...")
-            st.write(f"Downloading {key} from S3...")
             try:
+                st.write(f"bucket: {bucket}")
+                st.write(f"key: {key}")
+                st.write(f"local_path: {local_path}")
                 s3.download_file(bucket, key, local_path)
             except Exception as e:
                 print(f"Error downloading {fname}: {e}")
