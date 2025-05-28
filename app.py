@@ -39,11 +39,6 @@ def ensure_vector_store_cloud():
         s3 = boto3.client("s3")
         bucket = os.getenv("VECTOR_STORE_BUCKET")
         prefix = os.getenv("VECTOR_STORE_PREFIX", "vector_store")
-        #print(f"VECTOR_STORE_BUCKET: {bucket}")
-        #print(f"VECTOR_STORE_PREFIX: {prefix}")
-
-        #st.write(f"VECTOR_STORE_BUCKET: {bucket}")
-        #st.write(f"VECTOR_STORE_PREFIX: {prefix}")
 
         if not os.path.exists(persist_path):
             os.makedirs(persist_path)
@@ -52,13 +47,9 @@ def ensure_vector_store_cloud():
             local_path = os.path.join(persist_path, fname)
             print(f"Downloading {fname} from S3...")
             try:
-                #st.write(f"bucket: {bucket}")
-                #st.write(f"key: {key}")
-                #st.write(f"local_path: {local_path}")
                 s3.download_file(bucket, key, local_path)
             except Exception as e:
                 print(f"Error downloading {fname}: {e}")
-                #st.write(f"Error downloading {fname}: {e}")
     # After download, check again
     for fname in expected_files:
         if not os.path.exists(os.path.join(persist_path, fname)):
