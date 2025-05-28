@@ -51,6 +51,7 @@ def ensure_vector_store_cloud():
             key = f"{prefix}/{fname}"
             local_path = os.path.join(persist_path, fname)
             print(f"Downloading {fname} from S3...")
+            st.write(f"Downloading {key} from S3...")
             try:
                 s3.download_file(bucket, key, local_path)
             except Exception as e:
