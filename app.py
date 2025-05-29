@@ -58,14 +58,26 @@ def ensure_vector_store_cloud():
 # --- Load Vector Store ---
 def load_vector_store():
     mode = os.getenv("ASK_MODE", "streamlit")
+
     if mode == "local":
         print("🖥️ Running in LOCAL mode (loading vector store from ../vector_store)")
         persist_path = str(Path(__file__).parent.parent / "vector_store")
+        embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     else:
         print("☁️ Running in CLOUD mode (loading vector store from /tmp/vector_store)")
         persist_path = "/tmp/vector_store"
         ensure_vector_store_cloud()  # Only does anything in cloud mode
-    embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+        import streamlit as st
+        hf_token = st.secrets.get("HF_TOKEN")
+        if not hf_token:
+            raise ValueError("HF_TOKEN not set in Streamlit secrets. Please add your Hugging Face token.")
+        # Pass the token to the embedder
+        embedder = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={"use_auth_token": hf_token}
+        )
+
     return FAISS.load_local(persist_path, embedder, allow_dangerous_deserialization=True)
 
 # --- Load Components ---
