@@ -73,10 +73,15 @@ def load_vector_store():
         if not hf_token:
             raise ValueError("HF_TOKEN not set in Streamlit secrets. Please add your Hugging Face token.")
         # Pass the token to the embedder
-        embedder = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={"use_auth_token": hf_token}
-        )
+        try:
+            embedder = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                model_kwargs={"use_auth_token": hf_token}
+            )
+            st.write("Embedder loaded successfully.")
+        except Exception as e:
+            st.error(f"Failed to load HuggingFaceEmbeddings: {e}")
+            st.stop()
 
     return FAISS.load_local(persist_path, embedder, allow_dangerous_deserialization=True)
 

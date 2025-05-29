@@ -10,4 +10,4 @@ huggingface_hub[hf_xet]>=0.20.0
 chromadb
 langchain-chroma
 transformers==4.40.2
-app - full_cli_working.py
+sentence-transformers
