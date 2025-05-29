@@ -68,7 +68,6 @@ def load_vector_store():
         persist_path = "/tmp/vector_store"
         ensure_vector_store_cloud()  # Only does anything in cloud mode
 
-        import streamlit as st
         hf_token = st.secrets.get("HF_TOKEN")
         if not hf_token:
             raise ValueError("HF_TOKEN not set in Streamlit secrets. Please add your Hugging Face token.")
