@@ -87,6 +87,8 @@ def load_vector_store():
 
 # --- Load Components ---
 def load_components():
+    mode = os.getenv("ASK_MODE", "streamlit")
+
     vector_store = load_vector_store()
     if mode == "streamlit":
         st.write("load_vector_store completed successfully")
