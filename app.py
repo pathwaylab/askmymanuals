@@ -66,7 +66,7 @@ def load_vector_store():
     else:
         print("☁️ Running in CLOUD mode (loading vector store from /tmp/vector_store)")
         persist_path = "/tmp/vector_store"
-        ensure_vector_store_cloud()  # Only does anything in cloud mode
+        #ensure_vector_store_cloud()  # Only does anything in cloud mode
         st.write("after ensure_vector_store_cloud")
         #hf_token = st.secrets.get("HF_TOKEN")
         st.write("got HFtoken")
