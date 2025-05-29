@@ -88,15 +88,15 @@ def load_vector_store():
 # --- Load Components ---
 def load_components():
     vector_store = load_vector_store()
-    if mode == "streamlit"
+    if mode == "streamlit":
         st.write("load_vector_store completed successfully")
     retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 5, "lambda_mult": 0.3})
-    if mode == "streamlit"
+    if mode == "streamlit":
         st.write("before LLM/generator")
     generator = pipeline("text2text-generation", model="MBZUAI/LaMini-Flan-T5-783M", max_new_tokens=256)
     llm = HuggingFacePipeline(pipeline=generator)
     qa_chain = create_stuff_documents_chain(llm=llm, prompt=QA_PROMPT)
-    if mode == "streamlit"
+    if mode == "streamlit":
         st.write("after QA chain")
     # Get list of known product names
     known_products = set()
