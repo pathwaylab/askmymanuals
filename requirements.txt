@@ -7,7 +7,7 @@ langchain_community
 langchain_huggingface
 faiss-cpu
 huggingface_hub[hf_xet]>=0.20.0
-chromadb
+#chromadb
 langchain-chroma
 transformers==4.40.2
 sentence-transformers

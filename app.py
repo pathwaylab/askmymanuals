@@ -57,25 +57,44 @@ def ensure_vector_store_cloud():
 
 # --- Load Vector Store ---
 def load_vector_store():
+    """
+    Loads the FAISS vector store using the embedding model specified by the EMBEDDER_MODEL environment variable.
+    Supports both local (CLI) and cloud (Streamlit) modes.
+    """
     mode = os.getenv("ASK_MODE", "streamlit")
+    embedder_model_short_name = os.getenv("EMBEDDER_MODEL")
+
+    # Mapping short names to full model names
+    model_map = {
+        "minilm": "sentence-transformers/all-MiniLM-L6-v2",
+        "e5": "intfloat/e5-large-v2",
+        "bge": "BAAI/bge-base-en-v1.5",
+        "jina": "jinaai/jina-embeddings-v2-base-en"
+    }
+
+    embedder_model = model_map.get(embedder_model_short_name)
+    if not embedder_model:
+        print("❌ Embedder model not found or not set. Please set the EMBEDDER_MODEL environment variable.")
+        return
+    else:
+        print(f"Using embedder {embedder_model}")
 
     if mode == "local":
         print("🖥️ Running in LOCAL mode (loading vector store from ../vector_store)")
         persist_path = str(Path(__file__).parent.parent / "vector_store")
-        embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        embedder = HuggingFaceEmbeddings(model_name=embedder_model)
     else:
         print("☁️ Running in CLOUD mode (loading vector store from /tmp/vector_store)")
         persist_path = "/tmp/vector_store"
-        ensure_vector_store_cloud()  # Only does anything in cloud mode
+        ensure_vector_store_cloud()
         st.write("after ensure_vector_store_cloud")
         hf_token = st.secrets.get("HF_TOKEN")
         st.write("got HFtoken")
         if not hf_token:
             raise ValueError("HF_TOKEN not set in Streamlit secrets. Please add your Hugging Face token.")
-        # Pass the token to the embedder
         try:
             embedder = HuggingFaceEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2",
+                model_name=embedder_model,
                 model_kwargs={"use_auth_token": hf_token}
             )
             st.write("Embedder loaded successfully.")
@@ -108,7 +127,7 @@ def load_components():
             known_products.add(name)
     return vector_store, retriever, qa_chain, llm, known_products
 
-# --- CLI Mode (UNTOUCHED) ---
+# --- CLI Mode ---
 def run_cli_mode():
     print("\n📘 Ask My Manuals (Command Line Mode)")
     print("Type 'exit' to quit.\n")
