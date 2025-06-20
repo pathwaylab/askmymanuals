@@ -23,7 +23,8 @@ Answer:
 """)
 
 # --- Environment Loading ---
-if os.getenv("ASK_MODE", "streamlit") == "local":
+ask_mode = os.getenv("ASK_MODE", "streamlit")
+if ask_mode == "local" or ask_mode == "st_local":
     dotenv_path = Path("AskMyManualsLocal.env")
 else:
     dotenv_path = Path("AskMyManualsS3.env")
@@ -83,6 +84,10 @@ def load_vector_store():
         print("🖥️ Running in LOCAL mode (loading vector store from ../vector_store)")
         persist_path = str(Path(__file__).parent.parent / "vector_store")
         embedder = HuggingFaceEmbeddings(model_name=embedder_model)
+    elif mode == "st_local":
+        print("🖥️ Running in STREAMLIT LOCALHOST mode (loading vector store from /tmp/vector_store)")
+        persist_path = "/tmp/vector_store"
+        embedder = HuggingFaceEmbeddings(model_name=embedder_model)        
     else:
         print("☁️ Running in CLOUD mode (loading vector store from /tmp/vector_store)")
         persist_path = "/tmp/vector_store"
@@ -109,15 +114,15 @@ def load_components():
     mode = os.getenv("ASK_MODE", "streamlit")
 
     vector_store = load_vector_store()
-    if mode == "streamlit":
+    if mode == "streamlit" or mode == "st_local":
         st.write("load_vector_store completed successfully")
     retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 5, "lambda_mult": 0.3})
-    if mode == "streamlit":
+    if mode == "streamlit" or mode == "st_local":
         st.write("before LLM/generator")
     generator = pipeline("text2text-generation", model="MBZUAI/LaMini-Flan-T5-783M", max_new_tokens=256)
     llm = HuggingFacePipeline(pipeline=generator)
     qa_chain = create_stuff_documents_chain(llm=llm, prompt=QA_PROMPT)
-    if mode == "streamlit":
+    if mode == "streamlit" or mode == "st_local":
         st.write("after QA chain")
     # Get list of known product names
     known_products = set()
@@ -180,7 +185,40 @@ def run_streamlit_mode():
                 Document(page_content=doc.page_content[:400], metadata=doc.metadata)
                 for doc in docs
             ][:3]
-            result = qa_chain.invoke({"input_documents": truncated_docs, "question": user_input})
+            result = qa_chain.invoke({"context": truncated_docs, "question": user_input})
+            st.markdown(f"**🧠 Answer:** {result.strip()}")
+            st.markdown("### 🔍 Sources used:")
+            for doc in truncated_docs:
+                meta = doc.metadata
+                st.markdown(f"- **{meta.get('product_name', 'Unknown')}** (model {meta.get('model', '-')})")
+                st.caption(doc.page_content[:200].replace("\n", " "))
+
+def run_streamlit_mode_localhost():
+    st.set_page_config(page_title="Ask My Manuals (Localhost)", page_icon="📘")
+    st.title("📘 Ask My Manuals (Localhost)")
+    st.write("Ask a question about your appliances and devices. (Localhost mode, no secrets required)")
+    try:
+        os.environ["ASK_MODE"] = "st_local"  # Ensure correct mode for this run
+        vector_store, retriever, qa_chain, llm, known_products = load_components()
+    except FileNotFoundError as e:
+        st.error(str(e))
+        st.stop()
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
+        st.stop()
+    user_input = st.text_input("Your question:")
+    if user_input:
+        with st.spinner("Thinking..."):
+            enriched_query = user_input.lower()
+            docs = retriever.invoke(enriched_query)
+            product = next((name for name in known_products if name in enriched_query), None)
+            if product:
+                docs = [doc for doc in docs if doc.metadata.get("product_name", "").lower() == product]
+            truncated_docs = [
+                Document(page_content=doc.page_content[:400], metadata=doc.metadata)
+                for doc in docs
+            ][:3]
+            result = qa_chain.invoke({"context": truncated_docs, "question": user_input})
             st.markdown(f"**🧠 Answer:** {result.strip()}")
             st.markdown("### 🔍 Sources used:")
             for doc in truncated_docs:
@@ -190,7 +228,10 @@ def run_streamlit_mode():
 
 # --- Entry Point ---
 if __name__ == "__main__":
-    if os.getenv("ASK_MODE", "streamlit") == "local":
+    ask_mode = os.getenv("ASK_MODE", "streamlit")
+    if ask_mode == "local":
         run_cli_mode()
+    elif ask_mode == "st_local":
+        run_streamlit_mode_localhost()
     else:
         run_streamlit_mode()

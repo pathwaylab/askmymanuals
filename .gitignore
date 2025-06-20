@@ -2,9 +2,8 @@ AskMyManualsS3.env
 dependencies.txt
 audit_chunks_pdfplumber.py
 audit_chunks_unstructured.py
+audit_embeddings.py
 etl_pdfplumber.py
-etl_unstructured_miniLM-L6.py
-etl_unstructured.py
 run_local.sh
 scratchpad.py
 upload_vector_store.ps1
